@@ -17,12 +17,34 @@ def setup():
         if not os.getenv(var):
             raise ValueError(f"Missing {var} in .env file")
 
-def clean_text(text):
+def format_for_telegram(text):
+    """Форматирование текста для Telegram с MarkdownV2"""
     if not text:
         return ""
-    for char in ['*', '_', '[', ']', '`']:
-        text = text.replace(char, '')
-    return text.strip()
+    
+    # Экранируем специальные символы Markdown
+    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+        text = text.replace(char, f'\\{char}')
+    
+    # Добавляем форматирование
+    lines = text.split('\n')
+    formatted_lines = []
+    
+    for line in lines:
+        if not line.strip():
+            continue
+            
+        # Выделяем заголовки
+        if line.strip().endswith(':'):
+            line = f"*{line.strip()}*"
+        # Форматируем списки
+        elif line.strip().startswith(('-', '•', '→')):
+            line = f"• {line[1:].strip()}"
+        
+        formatted_lines.append(line)
+    
+    # Добавляем эмодзи в начало
+    return "📌 " + '\n\n'.join(formatted_lines)
 
 def read_queries(file_path="input.txt"):
     try:
@@ -48,14 +70,23 @@ def get_ai_response(query):
             "messages": [
                 {
                     "role": "system",
-                    "content": "Ты - русскоязычный помощник. Отвечай только на русском. Ответ должен быть 200-500 символов."
+                    "content": """Ты - русскоязычный помощник. Форматируй ответы для Telegram:
+1. Используй MarkdownV2 (*жирный*, _курсив_)
+2. Разделяй на абзацы (двойной перенос строки)
+3. Добавляй эмодзи для наглядности
+4. Выделяй основные пункты
+Пример:
+*Преимущества:*
+✅ Надежность
+✅ Простота
+➡️ Подробнее..."""
                 },
                 {
                     "role": "user",
                     "content": query
                 }
             ],
-            "max_tokens": 500
+            "max_tokens": 600
         }
         
         response = requests.post(
@@ -66,7 +97,7 @@ def get_ai_response(query):
         )
         
         if response.status_code == 200:
-            answer = clean_text(response.json()['choices'][0]['message']['content'])
+            answer = response.json()['choices'][0]['message']['content']
             return answer if is_russian(answer) else None
         else:
             print(f"API Error: {response.status_code} - {response.text[:200]}")
@@ -82,10 +113,11 @@ def send_to_telegram(message):
             f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/sendMessage",
             json={
                 "chat_id": Config.TELEGRAM_CHANNEL_ID,
-                "text": message,
+                "text": format_for_telegram(message),
+                "parse_mode": "MarkdownV2",
                 "disable_web_page_preview": True
             },
-            timeout=10
+            timeout=15
         )
         return response.status_code == 200
     except Exception as e:
@@ -93,18 +125,18 @@ def send_to_telegram(message):
         return False
 
 def main():
-    print("=== Telegram AI Bot ===")
-    print(f"Model: {Config.MODEL}")
+    print("=== 🌟 Telegram AI Bot ===")
+    print(f"🔧 Model: {Config.MODEL}")
     
     try:
         setup()
     except ValueError as e:
-        print(f"Config Error: {e}")
+        print(f"❌ Config Error: {e}")
         return
     
     queries = read_queries()
     if not queries:
-        print("❌ No questions in input.txt")
+        print("📭 No questions in input.txt")
         return
     
     query = queries[0]
@@ -115,10 +147,10 @@ def main():
         print("⚠️ Failed to get answer")
         return
     
-    print(f"📝 Answer ({len(answer)} chars): {answer[:50]}...")
+    print(f"📝 Answer preview:\n{answer[:100]}...")
     
     if send_to_telegram(answer):
-        print("✅ Posted to Telegram")
+        print("✅ Successfully posted to Telegram")
         # Remove processed question
         with open("input.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
