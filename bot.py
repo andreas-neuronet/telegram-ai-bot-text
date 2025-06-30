@@ -1,5 +1,6 @@
 import os
 import time
+import re
 import requests
 from dotenv import load_dotenv
 
@@ -18,33 +19,47 @@ def setup():
             raise ValueError(f"Missing {var} in .env file")
 
 def format_for_telegram(text):
-    """Форматирование текста для Telegram с MarkdownV2"""
+    """Форматирует текст для Telegram с учётом MarkdownV2"""
     if not text:
         return ""
-    
-    # Экранируем специальные символы Markdown
-    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
-        text = text.replace(char, f'\\{char}')
-    
-    # Добавляем форматирование
-    lines = text.split('\n')
+
+    # Шаг 1: Экранируем все специальные символы MarkdownV2
+    escaped_text = re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
+
+    # Шаг 2: Разбиваем на строки
+    lines = escaped_text.split('\n')
     formatted_lines = []
-    
+
     for line in lines:
-        if not line.strip():
+        stripped = line.strip()
+
+        # Пропускаем пустые строки
+        if not stripped:
             continue
-            
-        # Выделяем заголовки
-        if line.strip().endswith(':'):
-            line = f"*{line.strip()}*"
-        # Форматируем списки
-        elif line.strip().startswith(('-', '•', '→')):
-            line = f"• {line[1:].strip()}"
+
+        # Форматируем заголовки (строки, заканчивающиеся на ":")
+        if stripped.endswith(':'):
+            line = f"*{stripped}*"
         
+        # Форматируем маркированные списки
+        elif stripped.startswith(('-', '•', '→')):
+            bullet = stripped[0]
+            content = stripped[1:].strip()
+            line = f"• {content}"
+
+        # Форматируем нумерованные списки вроде "1. Что-то", "2. Другое"
+        elif re.match(r'^\d+\.', stripped):
+            parts = stripped.split('.', 1)
+            if len(parts) == 2:
+                number, content = parts
+                line = f"{number}\\. {content.strip()}"
+
+        # Добавляем к строке эмодзи в начало по желанию
         formatted_lines.append(line)
-    
-    # Добавляем эмодзи в начало
-    return "📌 " + '\n\n'.join(formatted_lines)
+
+    # Соединяем абзацы двойным переносом строки
+    result = "📌 " + '\n\n'.join(formatted_lines)
+    return result
 
 def read_queries(file_path="input.txt"):
     try:
@@ -90,7 +105,7 @@ def get_ai_response(query):
         }
         
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions ",
             headers=headers,
             json=data,
             timeout=30
@@ -110,7 +125,7 @@ def get_ai_response(query):
 def send_to_telegram(message):
     try:
         response = requests.post(
-            f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot {Config.TELEGRAM_BOT_TOKEN}/sendMessage",
             json={
                 "chat_id": Config.TELEGRAM_CHANNEL_ID,
                 "text": format_for_telegram(message),

@@ -12,6 +12,10 @@
 6. Запустите `python bot.py`
 
 **Для публикации на GitHub:**
+
+git config --global user.name "Andrey"
+git config --global user.email "andreas.neuronet@gmail.com"
+
 ```bash
 git init
 git add .
@@ -25,3 +29,11 @@ git push -u origin main
 ```bash
 git clone https://github.com/ваш_аккаунт/telegram-ai-bot-text.git
 cd telegram-ai-bot-text
+
+# Сначала получить изменения с сервера
+git pull origin main
+
+# Разрешить конфликты вручную, затем:
+git add .
+git commit -m "Разрешение конфликтов"
+git push origin main
