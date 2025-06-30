@@ -47,7 +47,7 @@ def format_for_telegram(text):
         
         lines.append(line)
     
-    return f"📌 *Сообщение от бота:*\n\n" + '\n\n'.join(lines)
+    return '\n\n'.join(lines)
 
 def read_queries(file_path="input.txt"):
     """Чтение вопросов из файла"""
