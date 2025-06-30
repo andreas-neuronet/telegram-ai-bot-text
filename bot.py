@@ -13,53 +13,114 @@ class Config:
     MODEL = os.getenv('MODEL')
 
 def setup():
+    """Проверка наличия всех необходимых переменных окружения"""
     required_vars = ['OPENROUTER_API_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHANNEL_ID', 'MODEL']
     for var in required_vars:
         if not os.getenv(var):
-            raise ValueError(f"Missing {var} in .env file")
+            raise ValueError(f"Не задана переменная {var} в .env файле")
 
 def escape_markdown(text):
-    """Альтернативная функция экранирования Markdown"""
+    """Экранирование специальных символов MarkdownV2"""
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return ''.join(f'\\{char}' if char in escape_chars else char for char in text)
 
 def format_for_telegram(text):
-    """Безопасное форматирование текста для Telegram MarkdownV2"""
+    """Форматирование текста для отправки в Telegram"""
     if not text:
         return ""
     
-    # Экранируем все спецсимволы MarkdownV2
     text = escape_markdown(text)
-    
-    # Восстанавливаем нужное нам форматирование
     text = text.replace(r'\*', '*').replace(r'\_', '_')
     
-    # Форматируем заголовки и списки
     lines = []
     for line in text.split('\n'):
         line = line.strip()
         if not line:
             continue
             
-        # Заголовки (строка заканчивается на :)
         if line.endswith(':'):
             line = f"*{line}*"
-        # Нумерованные списки (1., 2. и т.д.)
         elif re.match(r'^\d+\.', line):
             line = f"▪️ {line}"
-        # Маркированные списки
         elif line.startswith(('-', '•', '→')):
             line = f"• {line[1:].strip()}"
         
         lines.append(line)
     
-    # Добавляем разделение между абзацами
-    formatted_text = '\n\n'.join(lines)
-    
-    # Добавляем эмодзи-префикс
-    return f"📌 *Сообщение от бота:*\n\n{formatted_text}"
+    return f"📌 *Сообщение от бота:*\n\n" + '\n\n'.join(lines)
 
-# ... (остальные функции остаются без изменений) ...
+def read_queries(file_path="input.txt"):
+    """Чтение вопросов из файла"""
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            return [line.strip() for line in file if line.strip()]
+    except Exception as e:
+        print(f"📄 Ошибка чтения файла: {e}")
+        return []
+
+def is_russian(text):
+    """Проверка, содержит ли текст русские буквы"""
+    russian_letters = set('абвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+    return any(char in russian_letters for char in text.lower())
+
+def get_ai_response(query):
+    """Получение ответа от ИИ через OpenRouter API"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {Config.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": Config.MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Ты - русскоязычный помощник. Форматируй ответы для Telegram с использованием MarkdownV2 (*жирный*, _курсив_)."
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            "max_tokens": 600
+        }
+        
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            answer = response.json()['choices'][0]['message']['content']
+            return answer if is_russian(answer) else None
+        print(f"⚠️ Ошибка API: {response.status_code}")
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ Ошибка запроса: {str(e)[:200]}")
+        return None
+
+def send_to_telegram(message):
+    """Отправка сообщения в Telegram"""
+    try:
+        formatted_message = format_for_telegram(message)
+        response = requests.post(
+            f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": Config.TELEGRAM_CHANNEL_ID,
+                "text": formatted_message,
+                "parse_mode": "MarkdownV2",
+                "disable_web_page_preview": True
+            },
+            timeout=20
+        )
+        return response.status_code == 200
+    except Exception as e:
+        print(f"⚠️ Ошибка Telegram: {e}")
+        return False
 
 def main():
     print("=== 🌟 Умный Telegram Бот ===")
@@ -88,7 +149,6 @@ def main():
     
     if send_to_telegram(answer):
         print("✅ Сообщение успешно отправлено в Telegram")
-        # Удаляем обработанный вопрос
         with open("input.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
         with open("input.txt", "w", encoding="utf-8") as f:
